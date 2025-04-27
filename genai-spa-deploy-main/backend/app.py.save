@@ -1,0 +1,71 @@
+from flask import Flask, request, jsonify
+import jwt
+import datetime
+from flask_cors import CORS
+from functools import wraps
+
+app = Flask(__name__)
+CORS(app)
+
+SECRET_KEY = "your-secret-key"
+
+# --- JWT validation decorator ---
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        if 'Authorization' in request.headers:
+            token = request.headers['Authorization'].split()[1]
+
+        if not token:
+            return jsonify({'message': 'Token is missing!'}), 401
+
+        try:
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+            current_user = data['user']
+        except jwt.ExpiredSignatureError:
+            return jsonify({'message': 'Token expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'message': 'Invalid token'}), 401
+
+        return f(current_user, *args, **kwargs)  # ✅ pass current_user here
+    return decorated
+
+
+# --- Login Route ---
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+
+    if username.lower() == 'kyle' and password.lower() == 'kyle':
+        token = jwt.encode({
+            'user': username,
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+        }, SECRET_KEY, algorithm='HS256')
+
+        return jsonify({ 'token': token })
+
+    return jsonify({ 'message': 'Invalid credentials' }), 401
+
+# --- Chart Data Routes ---
+@app.route('/chart1')
+@token_required
+def chart1(current_user):
+    return jsonify({
+        "labels": ["GPT-4o", "SDXL", "Midjourney", "DALL-E 3"],
+        "data": [0.3, 0.5, 0.9, 0.7]
+    })
+
+@app.route('/chart2')
+@token_required
+def chart2(current_user):
+    return jsonify({
+        "labels": ["GPT-4o", "GPT-4", "GPT-3.5", "Claude 2"],
+        "data": [0.96, 0.94, 0.89, 0.92]
+    })
+
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=3000)
